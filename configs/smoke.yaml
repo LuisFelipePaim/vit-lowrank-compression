@@ -1,0 +1,16 @@
+# Dados sinteticos + ViT minusculo: roda o pipeline inteiro em CPU em ~1 min.
+_base_: full.yaml
+experiment: {out_dir: runs_smoke, results_dir: results_smoke, seeds: [0, 1]}
+data: {name: fake, num_classes: 6, val_per_class: 20, num_workers: 0, fake_per_class: 60, fake_test_per_class: 30}
+models:
+  baseline: {name: deit_tiny_patch16_224, pretrained: false, kwargs: {img_size: 32, patch_size: 8, embed_dim: 64, depth: 2, num_heads: 4}}
+  control:  {name: deit_tiny_patch16_224, pretrained: false, kwargs: {img_size: 32, patch_size: 8, embed_dim: 32, depth: 2, num_heads: 2}}
+train: {epochs: 3, batch_size: 16, accum_steps: 2, lr: 2.0e-3}
+compress: {thresholds: [0.5, 0.8, 0.95]}
+finetune: {epochs: 1, lr: 1.0e-3}
+eval: {batch_size: 64, cpu_batch_size: 64}
+select: {max_drop_pp: 5.0}
+bench:
+  gpu: {warmup: 2, reps: 5, batch_sizes: [1, 8]}
+  cpu: {warmup: 2, reps: 5, batch_size: 1, threads: null}
+bootstrap: {n_boot: 500}

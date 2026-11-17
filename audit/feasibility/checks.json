@@ -1,0 +1,15 @@
+{
+  "unit_suite": {
+    "passed": 30,
+    "seconds": 70.22
+  },
+  "feasibility_export_guard": {
+    "passed": 1
+  },
+  "fresh_cuda_end_to_end_smoke": "passed",
+  "smoke_config": "audit/feasibility/cleanup_smoke.yaml",
+  "official_test_evaluated": false,
+  "remote_created": false,
+  "git_push": false,
+  "hub_upload": false
+}

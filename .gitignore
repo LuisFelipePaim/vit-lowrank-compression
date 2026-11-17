@@ -1,0 +1,51 @@
+__pycache__/
+*.egg-info/
+.pytest_cache/
+runs/
+hf_export/
+results_smoke/
+runs_smoke/
+*.pt
+
+# Environments, build products and tool caches
+.venv/
+venv/
+env/
+.conda/
+.cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.coverage*
+htmlcov/
+build/
+dist/
+# Datasets, checkpoints and generated runs (including nested audit artifacts)
+data/
+datasets/
+checkpoints/
+runs*/
+results*/
+hf_export*/
+audit/export/
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+*.npy
+*.npz
+# Notebook output and local credentials
+.ipynb_checkpoints/
+*.nbconvert.*
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+# Editors and operating systems
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.log

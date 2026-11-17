@@ -1,0 +1,17 @@
+﻿{
+    "CPU":  {
+                "Name":  "13th Gen Intel(R) Core(TM) i7-13650HX",
+                "NumberOfCores":  14,
+                "NumberOfLogicalProcessors":  20
+            },
+    "RAMGiB":  15.69,
+    "OS":  "Microsoft Windows 11 Pro",
+    "OSVersion":  "10.0.26200",
+    "GPU":  "NVIDIA GeForce RTX 3050 6GB Laptop GPU",
+    "Driver":  "591.59",
+    "Python":  "3.12.7",
+    "PyTorch":  "2.5.1+cu121",
+    "CUDA":  "12.1",
+    "TrainingCPUThreads":  4,
+    "DataLoaderWorkers":  4
+}

@@ -1,0 +1,63 @@
+# Experimento completo: Food-101, split oficial (75.750 treino / 25.250 teste).
+# A validacao (75 img/classe) e separada do TREINO oficial de forma estratificada;
+# o teste oficial so e tocado por scripts/04_final_test.py.
+experiment:
+  out_dir: runs            # checkpoints
+  results_dir: results     # CSVs, predicoes por exemplo, graficos
+  seeds: [42, 0, 1]         # seed 42 predeclared for release; three seeds in total
+
+data:
+  name: food101            # food101 | fake (sintetico, para smoke test)
+  source: original         # official archive via torchvision; hf remains supported
+  root_env: FOOD101_ROOT   # parent of food-101/, supplied locally, never committed
+  archive_md5: 85eeb15f3717b99a5da872d97d918f87
+  hf_id: ethz/food101
+  cache_dir: null          # null = cache padrao do HF (~5 GB)
+  num_classes: 101
+  split_seed: 1234         # fixo: o split NAO muda com a seed do treino
+  val_per_class: 75
+  train_per_class: null    # null = todas as 675 restantes por classe
+  num_workers: 4
+
+models:
+  baseline:
+    name: deit_small_patch16_224.fb_in1k
+    pretrained: true
+    kwargs:
+      pretrained_cfg_overlay:
+        hf_hub_id: timm/deit_small_patch16_224.fb_in1k@91327a9c99f98fe6b524cd4d397b7226b80e1365
+  control:  {name: deit_tiny_patch16_224.fb_in1k,  pretrained: true, kwargs: {}}
+
+train:                     # fine-tuning do baseline e do controle (mesma receita)
+  epochs: 5
+  batch_size: 32
+  accum_steps: 2           # batch efetivo = 64
+  lr: 5.0e-5
+  weight_decay: 0.05
+  warmup_frac: 0.05
+  label_smoothing: 0.1
+  grad_clip: 1.0
+  amp: true
+
+compress:
+  thresholds: [0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99]
+  targets: [attn.qkv, attn.proj, mlp.fc1, mlp.fc2]
+  skip_if_not_smaller: true   # camada fica densa se r*(d_in+d_out) >= d_in*d_out
+
+finetune:                  # fine-tuning curto pos-compressao (herda o resto de train)
+  epochs: 1
+  lr: 5.0e-5
+  train_per_class: null    # reduza (ex.: 300) se o orcamento de tempo apertar
+
+eval:
+  batch_size: 128
+  cpu_batch_size: 32       # usado na avaliacao INT8
+
+select:
+  max_drop_pp: 1.0         # regra pre-declarada: menor modelo com queda media <= 1 pp na validacao
+
+bench:
+  gpu: {warmup: 20, reps: 100, batch_sizes: [1, 32]}
+  cpu: {warmup: 5, reps: 30, batch_size: 1, threads: null}
+
+bootstrap: {n_boot: 10000, seed: 0}

@@ -1,0 +1,4 @@
+scenario,baseline_epochs,svd_ft_epochs,python_version,torch_version,cuda_version,driver_version,control_epochs,validation_passes,gpu_test_passes,cpu_int8_test_passes,gpu_hours,cpu_int8_and_bench_hours_proxy,cpu_svd_hours,serial_hours_excluding_unmeasured_overheads,serial_hours_with_20pct_planning_margin
+optimistic_assumption,15,21,3.12.7,2.5.1+cu121,12.1,591.59,15,48,15,6,7.101393881345895,1.6916302668778473,0.018026227333490775,8.811050375557233,10.573260450668679
+conservative_equal_training_cost,15,21,3.12.7,2.5.1+cu121,12.1,591.59,15,48,15,6,13.094627073941746,1.6916302668778473,0.018026227333490775,14.804283568153084,17.765140281783697
+stress_assumption,15,21,3.12.7,2.5.1+cu121,12.1,591.59,15,48,15,6,17.425619233412533,1.6916302668778473,0.018026227333490775,19.135275727623867,22.96233087314864

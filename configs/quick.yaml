@@ -1,0 +1,8 @@
+# Versao reduzida (SUBCONJUNTO ESTRATIFICADO DECLARADO): 150 img/classe no treino,
+# 2 epocas. Serve para validar o pipeline na GPU em ~1 h; NAO e o resultado final.
+_base_: full.yaml
+experiment: {out_dir: runs_quick, results_dir: results_quick}
+data: {train_per_class: 150}
+train: {epochs: 2}
+finetune: {train_per_class: 100}
+bootstrap: {n_boot: 2000}

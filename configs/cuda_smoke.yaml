@@ -1,0 +1,5 @@
+_base_: smoke.yaml
+experiment: {out_dir: runs_cuda_smoke, results_dir: results_cuda_smoke, seeds: [42]}
+data: {num_workers: 0}
+train: {epochs: 1}
+compress: {thresholds: [0.5]}

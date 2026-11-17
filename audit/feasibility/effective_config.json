@@ -1,0 +1,99 @@
+{
+  "experiment": {
+    "out_dir": "runs_feasibility",
+    "results_dir": "results_feasibility",
+    "seeds": [
+      42
+    ]
+  },
+  "data": {
+    "name": "food101",
+    "source": "original",
+    "root_env": "FOOD101_ROOT",
+    "hf_id": "ethz/food101",
+    "cache_dir": "data/hf_datasets",
+    "num_classes": 101,
+    "split_seed": 1234,
+    "val_per_class": 75,
+    "train_per_class": null,
+    "num_workers": 4,
+    "archive_md5": "85eeb15f3717b99a5da872d97d918f87"
+  },
+  "models": {
+    "baseline": {
+      "name": "deit_small_patch16_224.fb_in1k",
+      "pretrained": true,
+      "kwargs": {
+        "pretrained_cfg_overlay": {
+          "hf_hub_id": "timm/deit_small_patch16_224.fb_in1k@91327a9c99f98fe6b524cd4d397b7226b80e1365"
+        }
+      }
+    },
+    "control": {
+      "name": "deit_tiny_patch16_224.fb_in1k",
+      "pretrained": true,
+      "kwargs": {}
+    }
+  },
+  "train": {
+    "epochs": 1,
+    "batch_size": 32,
+    "accum_steps": 2,
+    "lr": 5e-05,
+    "weight_decay": 0.05,
+    "warmup_frac": 0.05,
+    "label_smoothing": 0.1,
+    "grad_clip": 1.0,
+    "amp": true
+  },
+  "compress": {
+    "thresholds": [
+      0.5,
+      0.6,
+      0.7,
+      0.8,
+      0.9,
+      0.95,
+      0.99
+    ],
+    "targets": [
+      "attn.qkv",
+      "attn.proj",
+      "mlp.fc1",
+      "mlp.fc2"
+    ],
+    "skip_if_not_smaller": true
+  },
+  "finetune": {
+    "epochs": 1,
+    "lr": 5e-05,
+    "train_per_class": null
+  },
+  "eval": {
+    "batch_size": 128,
+    "cpu_batch_size": 32
+  },
+  "select": {
+    "max_drop_pp": 1.0
+  },
+  "bench": {
+    "gpu": {
+      "warmup": 20,
+      "reps": 100,
+      "batch_sizes": [
+        1,
+        32
+      ]
+    },
+    "cpu": {
+      "warmup": 5,
+      "reps": 30,
+      "batch_size": 1,
+      "threads": null
+    }
+  },
+  "bootstrap": {
+    "n_boot": 10000,
+    "seed": 0
+  }
+}

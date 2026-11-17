@@ -1,0 +1,2 @@
+_base_: ../../configs/cuda_smoke.yaml
+experiment: {out_dir: runs_cuda_smoke_cleanup, results_dir: results_cuda_smoke_cleanup, seeds: [42]}

@@ -1,0 +1,939 @@
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..097d8f4
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,51 @@
++__pycache__/
++*.egg-info/
++.pytest_cache/
++runs/
++hf_export/
++results_smoke/
++runs_smoke/
++*.pt
++
++# Environments, build products and tool caches
++.venv/
++venv/
++env/
++.conda/
++.cache/
++.mypy_cache/
++.ruff_cache/
++.tox/
++.coverage*
++htmlcov/
++build/
++dist/
++# Datasets, checkpoints and generated runs (including nested audit artifacts)
++data/
++datasets/
++checkpoints/
++runs*/
++results*/
++hf_export*/
++audit/export/
++*.pth
++*.ckpt
++*.safetensors
++*.onnx
++*.npy
++*.npz
++# Notebook output and local credentials
++.ipynb_checkpoints/
++*.nbconvert.*
++.env
++.env.*
++!.env.example
++*.pem
++*.key
++# Editors and operating systems
++.vscode/
++.idea/
++.DS_Store
++Thumbs.db
++Desktop.ini
++*.log
+diff --git a/README.md b/README.md
+new file mode 100644
+index 0000000..cca7ccb
+--- /dev/null
++++ b/README.md
+@@ -0,0 +1,145 @@
++# Compressão de Vision Transformers por baixo posto × quantização (Food-101)
++
++**Pergunta.** Em um ViT, quanto de redução de parâmetros, FLOPs e latência a decomposição de
++baixo posto (SVD truncado nas camadas lineares) entrega, a que custo de acurácia — e como ela se
++compara e se combina com quantização (fp16, INT8 dinâmica) e com simplesmente escolher uma
++arquitetura menor?
++
++> **Release suspended:** no Food-101 experiments or release checkpoints exist yet.
++> Existing `results_smoke/` and `audit/` artifacts are synthetic tests, not Food-101 results.
++> Code author: Luis Felipe Garcia de Souza Paim, UFU. Code license decision: Apache-2.0;
++> weight licensing remains pending. Publication seed: **42**, chosen before results.
++> See `audit/RELEASE_PREPARATION.md` for the current preparation status.
++>
++> **Estado anterior (a revalidar):** o código está completo e testado (21 testes unitários + pipeline de ponta a ponta com
++> dados sintéticos em CPU). **Os resultados no Food-101 ainda não foram gerados** — a tabela e os
++> gráficos abaixo são preenchidos pelos scripts 03–05. Os caminhos que exigem GPU (AMP, fp16,
++> latência em CUDA) não foram exercitados no ambiente de desenvolvimento, que não tinha GPU.
++
++## Método
++
++| Peça | Escolha |
++|---|---|
++| Baseline | `deit_small_patch16_224.fb_in1k` (timm, 22 M parâmetros), fine-tuning no Food-101 |
++| Compressão | cada `Linear(d_in, d_out)` de `attn.qkv`, `attn.proj`, `mlp.fc1`, `mlp.fc2` (48 camadas) vira `Linear(d_in, r) → Linear(r, d_out)` por SVD truncado |
++| Rank | menor `r` com `Σ_{i≤r} σ_i² / Σ σ_i² ≥ limiar`; limiares {0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99} |
++| Fine-tuning curto | 1 época após a decomposição, mesma receita do baseline |
++| Quantização | fp16 (GPU) e INT8 dinâmica das `nn.Linear` (CPU), no baseline e no ponto comprimido selecionado |
++| Controle | `deit_tiny_patch16_224.fb_in1k` (5,7 M) com o mesmo fine-tuning |
++
++DeiT-S e DeiT-Ti têm o mesmo pré-treino (ImageNet-1k, mesma receita), então o controle isola o
++efeito "arquitetura menor" do efeito "pré-treino diferente".
++
++### Decisões que afetam a leitura dos resultados
++
++- **Validação.** O Food-101 oficial só tem treino (75.750) e teste (25.250). A validação
++  (75 imagens/classe = 7.575) é separada do treino oficial, estratificada, com seed fixa
++  (`data.split_seed`) — o split não muda entre seeds de treino. O treino efetivo tem 68.175 imagens.
++- **Camadas que não compensam ficam densas.** Fatorar só reduz parâmetros se
++  `r·(d_in+d_out) < d_in·d_out` (ex.: `r < 192` para 384→384). Acima disso a camada é mantida
++  densa e registrada com rank 0 em `ranks_json`. Em limiares altos, espere poucas camadas fatoradas.
++- **O que as seeds variam.** Inicialização da cabeça, ordem dos dados e augmentations do
++  fine-tuning. Cada seed tem seu baseline; a compressão da seed *s* parte do baseline da seed *s*.
++- **Sem seleção de checkpoint.** Usa-se sempre a última época; hiperparâmetros fixados a priori.
++- **"Treinado direto"** no controle significa fine-tuning do DeiT-Ti pré-treinado, não treino do zero.
++- **FLOPs** = multiply-accumulates (convenção fvcore) de Linear, Conv e dos dois produtos da
++  atenção, contados por hooks no forward real. O contador reproduz a fórmula analítica do DeiT-S
++  (4,60 G) em `tests/test_metrics.py`.
++- **Latência** depende da máquina: laptop na tomada, nada mais usando a GPU. FLOPs menores não
++  garantem latência menor — em batch 1 na GPU, duas matmuls pequenas podem custar o mesmo que uma grande.
++
++## Protocolo experimental
++
++1. 3 seeds; tudo é reportado como média ± desvio padrão (ddof=1).
++2. A varredura de limiares é avaliada **só na validação**.
++3. O limiar é escolhido por regra pré-declarada (`select.max_drop_pp`): o modelo com menos
++   parâmetros cuja queda média de top-1 (com fine-tuning) não passa de 1 pp. Se nenhum cumpre,
++   o de maior top-1 — e isso fica marcado em `selection.json`.
++4. O teste oficial é avaliado **uma vez** por `04_final_test.py`, que grava `TEST_LOCK.json` e se
++   recusa a rodar de novo sem `--force`.
++5. Δ top-1 contra o baseline com IC 95% por **bootstrap pareado** (reamostra os mesmos exemplos
++   para os dois modelos; 10.000 réplicas), por seed e agregado entre seeds.
++6. `results/runs.csv`: uma linha por execução, com seed, limiar, ranks por camada (JSON) e todas
++   as métricas. Acertos por exemplo ficam em `results/preds/`.
++
++## Como rodar (Windows, RTX 3050 6 GB)
++
++```powershell
++python -m venv .venv; .venv\Scripts\Activate.ps1
++# 1) PyTorch com CUDA: copie o comando de https://pytorch.org/get-started/locally/
++# 2) o resto:
++pip install -r requirements.txt
++pip install -e .
++pytest                                   # 21 testes, ~10 s
++python -c "import torch; print(torch.cuda.is_available())"   # precisa dar True
++```
++
++Smoke test (dados sintéticos, ~1 min, sem download) — rode antes de tudo:
++
++```powershell
++$C = "configs/smoke.yaml"
++python scripts/01_train.py --config $C --role baseline
++python scripts/01_train.py --config $C --role control
++python scripts/02_sweep.py --config $C
++python scripts/03_select.py --config $C
++python scripts/04_final_test.py --config $C
++python scripts/05_plots.py --config $C
++```
++
++Depois repita a mesma sequência com `configs/quick.yaml` (subconjunto estratificado declarado,
++150 imagens/classe — valida GPU, AMP e fp16 em cerca de uma hora) e, por fim, com
++`configs/full.yaml`. Todos os scripts são retomáveis: execuções já presentes no CSV são puladas.
++
++**Orçamento (estimativa, não medido):** o experimento completo são ~45 épocas-equivalentes de
++DeiT-S (15 do baseline, 21 de fine-tuning pós-compressão, 15 do DeiT-Ti, mais leves). A 10–15 min
++por época, conte com 8–12 h; rode uma seed por vez com `--seeds 0` se preferir. Se não couber,
++reduza `finetune.train_per_class` ou `data.train_per_class` e **declare o subconjunto**.
++
++Memória: batch 32 com AMP e `accum_steps: 2` (batch efetivo 64). Se faltar VRAM, use
++`batch_size: 16` e `accum_steps: 4`. No Windows, se o DataLoader travar, teste `num_workers: 0`.
++
++## Publicação no Hugging Face
++
++```powershell
++huggingface-cli login
++python scripts/06_publish_hf.py --config configs/full.yaml --repo-id SEU_USUARIO/deit-small-food101-svd --github https://github.com/SEU_USUARIO/vit-lowrank-compression --dry-run
++```
++
++`--dry-run` is read-only: it creates, deletes and uploads nothing.
++Remote publication is suspended. `--local-only` builds a **new** local directory
++only after validating checkpoint provenance. Synthetic exports are refused.
++
++## Resultados
++
++_A preencher com a saída de `03_select.py` (validação) e `04_final_test.py` (teste)._
++Figuras em `results/figures/`: `pareto_params.png`, `pareto_flops.png`,
++`pareto_latency_gpu.png`, `pareto_latency_cpu.png`.
++
++## Estrutura
++
++```
++src/vitlr/
++  data.py        Food-101 (HF), split estratificado, transforms
++  model.py       criação via timm, checkpoints (com ranks)
++  compress.py    FactorizedLinear, rank por energia, compress_model
++  train.py       AdamW + cosseno, AMP, gradient accumulation
++  evaluate.py    top-1/top-5, acertos por exemplo
++  flops.py       contador por hooks
++  benchmark.py   parâmetros, tamanho em disco, latência
++  quantize.py    fp16, INT8 dinâmica
++  stats.py       bootstrap pareado, splits estratificados
++  pipeline.py    uma linha por execução no CSV
++  report.py      média ± dp, IC agregado, tabela
++configs/         full.yaml, quick.yaml, smoke.yaml
++scripts/         01_train, 02_sweep, 03_select, 04_final_test, 05_plots, 06_publish_hf
++tests/           decomposição, FLOPs, bootstrap, quantização, dados
++```
++
++## Limitações
++
++- SVD dos pesos ignora as ativações; variantes cientes dos dados (ex.: SVD ponderado pela
++  covariância das entradas) tendem a perder menos acurácia sem fine-tuning.
++- Um limiar global de energia; não há busca de rank por camada.
++- INT8 dinâmica não acelera GPU; fp16 não é medido em CPU.
++- Uma tarefa (Food-101), uma família de modelos (DeiT) e um único laptop para latência.
++- As imagens do Food-101 vêm do Foodspotting; a licença do dataset no HF consta como desconhecida.
+diff --git a/requirements.txt b/requirements.txt
+new file mode 100644
+index 0000000..46b9f48
+--- /dev/null
++++ b/requirements.txt
+@@ -0,0 +1,48 @@
++# Validated CPU environment: Python 3.12.7 (Windows). CUDA environment pending.
++--extra-index-url https://download.pytorch.org/whl/cpu
++anyio==4.16.0
++click==8.5.1
++colorama==0.4.6
++contourpy==1.4.0
++cycler==0.12.1
++datasets==5.2.0
++dill==0.4.1
++filelock==4.2.10
++fonttools==4.68.0
++fsspec==2026.9.0
++h11==0.16.0
++hf-xet==1.8.0
++httpcore2==2.16.0
++httpx2==2.16.0
++huggingface_hub==2.4.0
++idna==3.20
++iniconfig==2.3.1
++Jinja2==3.1.6
++kiwisolver==1.5.1
++MarkupSafe==3.0.4
++matplotlib==3.11.2
++mpmath==1.3.0
++multiprocess==0.70.19
++networkx==3.7
++numpy==2.5.4
++packaging==26.3
++pandas==3.1.1
++pillow==13.0.0
++pluggy==1.7.0
++pyarrow==26.0.1
++Pygments==2.21.0
++pyparsing==3.3.3
++pytest==9.2.0
++python-dateutil==4.0.0
++PyYAML==6.0.3
++safetensors==0.8.0
++setuptools==84.2.1
++sympy==1.14.0
++timm==1.0.31
++torch==2.15.0+cpu
++torchvision==0.29.2+cpu
++tqdm==4.70.1
++truststore==0.10.5
++typing_extensions==4.16.0
++tzdata==2026.6
++xxhash==4.1.0
+diff --git a/configs/full.yaml b/configs/full.yaml
+new file mode 100644
+index 0000000..5fc9d4a
+--- /dev/null
++++ b/configs/full.yaml
+@@ -0,0 +1,55 @@
++# Experimento completo: Food-101, split oficial (75.750 treino / 25.250 teste).
++# A validacao (75 img/classe) e separada do TREINO oficial de forma estratificada;
++# o teste oficial so e tocado por scripts/04_final_test.py.
++experiment:
++  out_dir: runs            # checkpoints
++  results_dir: results     # CSVs, predicoes por exemplo, graficos
++  seeds: [42, 0, 1]         # seed 42 predeclared for release; three seeds in total
++
++data:
++  name: food101            # food101 | fake (sintetico, para smoke test)
++  hf_id: ethz/food101
++  cache_dir: null          # null = cache padrao do HF (~5 GB)
++  num_classes: 101
++  split_seed: 1234         # fixo: o split NAO muda com a seed do treino
++  val_per_class: 75
++  train_per_class: null    # null = todas as 675 restantes por classe
++  num_workers: 4
++
++models:
++  baseline: {name: deit_small_patch16_224.fb_in1k, pretrained: true, kwargs: {}}
++  control:  {name: deit_tiny_patch16_224.fb_in1k,  pretrained: true, kwargs: {}}
++
++train:                     # fine-tuning do baseline e do controle (mesma receita)
++  epochs: 5
++  batch_size: 32
++  accum_steps: 2           # batch efetivo = 64
++  lr: 5.0e-5
++  weight_decay: 0.05
++  warmup_frac: 0.05
++  label_smoothing: 0.1
++  grad_clip: 1.0
++  amp: true
++
++compress:
++  thresholds: [0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99]
++  targets: [attn.qkv, attn.proj, mlp.fc1, mlp.fc2]
++  skip_if_not_smaller: true   # camada fica densa se r*(d_in+d_out) >= d_in*d_out
++
++finetune:                  # fine-tuning curto pos-compressao (herda o resto de train)
++  epochs: 1
++  lr: 5.0e-5
++  train_per_class: null    # reduza (ex.: 300) se o orcamento de tempo apertar
++
++eval:
++  batch_size: 128
++  cpu_batch_size: 32       # usado na avaliacao INT8
++
++select:
++  max_drop_pp: 1.0         # regra pre-declarada: menor modelo com queda media <= 1 pp na validacao
++
++bench:
++  gpu: {warmup: 20, reps: 100, batch_sizes: [1, 32]}
++  cpu: {warmup: 5, reps: 30, batch_size: 1, threads: null}
++
++bootstrap: {n_boot: 10000, seed: 0}
+diff --git a/scripts/01_train.py b/scripts/01_train.py
+new file mode 100644
+index 0000000..a972a1b
+--- /dev/null
++++ b/scripts/01_train.py
+@@ -0,0 +1,45 @@
++"""Fine-tuning do baseline (DeiT-S) ou do controle (DeiT-Ti) no treino; avalia na VALIDACAO.
++
++    python scripts/01_train.py --config configs/full.yaml --role baseline
++    python scripts/01_train.py --config configs/full.yaml --role control
++"""
++import argparse
++
++from vitlr.data import DataBundle
++from vitlr.model import create_model, data_config, save_checkpoint
++from vitlr.pipeline import ckpt_path, done_ids, eval_and_log, run_id
++from vitlr.train import train_model
++from vitlr.utils import get_device, load_config, set_seed
++
++
++def main():
++    ap = argparse.ArgumentParser()
++    ap.add_argument("--config", required=True)
++    ap.add_argument("--role", choices=["baseline", "control"], required=True)
++    ap.add_argument("--seeds", type=int, nargs="*")
++    a = ap.parse_args()
++    cfg, device = load_config(a.config), get_device()
++    mcfg, nc = cfg["models"][a.role], cfg["data"]["num_classes"]
++    dcfg = data_config(create_model(mcfg, nc, pretrained=False))
++    bundle = DataBundle(cfg, dcfg)
++    print(f"device={device} | treino={len(bundle.train_idx)} | validacao={len(bundle.val_idx)} | modelo={mcfg['name']}")
++
++    for seed in a.seeds or cfg["experiment"]["seeds"]:
++        ck = ckpt_path(cfg, a.role, seed)
++        if ck.exists() and run_id(a.role, seed, "val") in done_ids(cfg):
++            print(f"[skip] {a.role} seed {seed} ja concluido")
++            continue
++        set_seed(seed)
++        model = create_model(mcfg, nc)
++        t = cfg["train"]
++        info = train_model(model, bundle.loader("train", t["batch_size"], train=True, seed=seed), t, device,
++                           desc=f"{a.role} s{seed}")
++        save_checkpoint(ck, model, mcfg, nc, seed=seed, experiment_config=cfg)
++        eval_and_log(cfg, bundle, model, split="val", seed=seed, method=a.role, model_name=mcfg["name"],
++                     device=device, input_size=dcfg["input_size"],
++                     train_info={"train_epochs": t["epochs"], "train_examples": len(bundle.train_idx),
++                                 "train_seconds": round(info["train_seconds"], 1)})
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/scripts/02_sweep.py b/scripts/02_sweep.py
+new file mode 100644
+index 0000000..af1c1f1
+--- /dev/null
++++ b/scripts/02_sweep.py
+@@ -0,0 +1,56 @@
++"""Varredura de limiares de energia: para cada seed e limiar, comprime o baseline
++por SVD truncado, avalia SEM fine-tuning, faz fine-tuning curto e avalia de novo.
++Tudo na VALIDACAO.
++
++    python scripts/02_sweep.py --config configs/full.yaml
++"""
++import argparse
++import copy
++
++from vitlr.compress import compress_model, ranks_of
++from vitlr.data import DataBundle
++from vitlr.model import data_config, load_checkpoint, save_checkpoint
++from vitlr.pipeline import ckpt_path, done_ids, eval_and_log, run_id
++from vitlr.train import train_model
++from vitlr.utils import get_device, load_config, set_seed
++
++
++def main():
++    ap = argparse.ArgumentParser()
++    ap.add_argument("--config", required=True)
++    ap.add_argument("--seeds", type=int, nargs="*")
++    ap.add_argument("--thresholds", type=float, nargs="*")
++    a = ap.parse_args()
++    cfg, device = load_config(a.config), get_device()
++    mcfg, nc, cc = cfg["models"]["baseline"], cfg["data"]["num_classes"], cfg["compress"]
++    ft = {**cfg["train"], **cfg["finetune"]}
++    bundle = None
++
++    for seed in a.seeds or cfg["experiment"]["seeds"]:
++        base, _ = load_checkpoint(ckpt_path(cfg, "baseline", seed), device)
++        dcfg = data_config(base)
++        bundle = bundle or DataBundle(cfg, dcfg)
++        common = dict(split="val", seed=seed, method="svd", model_name=mcfg["name"], device=device,
++                      input_size=dcfg["input_size"])
++        for thr in a.thresholds or cc["thresholds"]:
++            done, ck = done_ids(cfg), ckpt_path(cfg, "svd", seed, thr)
++            id0, id1 = (run_id("svd", seed, "val", "fp32", thr, f) for f in (0, 1))
++            if id0 in done and id1 in done and ck.exists():
++                print(f"[skip] seed {seed} limiar {thr}")
++                continue
++            model = copy.deepcopy(base)
++            info = compress_model(model, thr, cc["targets"], cc["skip_if_not_smaller"])
++            if id0 not in done:
++                eval_and_log(cfg, bundle, model, threshold=thr, finetuned=0, comp_info=info, **common)
++            set_seed(seed * 1000 + int(round(thr * 100)))
++            loader = bundle.loader("train", ft["batch_size"], train=True, seed=seed, per_class=ft.get("train_per_class"))
++            tinfo = train_model(model, loader, ft, device, desc=f"ft s{seed} thr{thr}")
++            save_checkpoint(ck, model, mcfg, nc, ranks=ranks_of(info), seed=seed, threshold=thr,
++                            experiment_config=cfg)
++            eval_and_log(cfg, bundle, model, threshold=thr, finetuned=1, comp_info=info,
++                         train_info={"train_epochs": ft["epochs"], "train_examples": len(loader.dataset),
++                                     "train_seconds": round(tinfo["train_seconds"], 1)}, **common)
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/scripts/06_publish_hf.py b/scripts/06_publish_hf.py
+new file mode 100644
+index 0000000..f37ad9f
+--- /dev/null
++++ b/scripts/06_publish_hf.py
+@@ -0,0 +1,162 @@
++"""Prepare local model packages; remote publication is suspended.
++
++--dry-run is strictly read-only. --local-only requires a new destination.
++Synthetic checkpoints cannot be exported or published.
++"""
++import sys
++
++# Keep even Python's import cache read-only for dry-run invocations.
++sys.dont_write_bytecode = True
++
++import argparse
++import json
++import shutil
++from pathlib import Path
++
++import pandas as pd
++from safetensors.torch import save_file
++
++from vitlr.model import data_config, load_checkpoint
++from vitlr.pipeline import ckpt_path
++from vitlr.report import fmt_table
++from vitlr.utils import load_config
++
++LOADER = '''"""Loader autossuficiente (depende so de torch, timm, safetensors, huggingface_hub).
++
++    from vitlr_loader import load
++    model, cfg = load("USUARIO/REPO")     # ou um diretorio local
++"""
++import json
++import os
++
++import timm
++import torch.nn as nn
++from safetensors.torch import load_file
++
++
++class FactorizedLinear(nn.Module):
++    """Linear(d_in, d_out) de baixo posto: Linear(d_in, r) -> Linear(r, d_out)."""
++
++    def __init__(self, in_features, out_features, rank, bias=True):
++        super().__init__()
++        self.first = nn.Linear(in_features, rank, bias=False)
++        self.second = nn.Linear(rank, out_features, bias=bias)
++
++    def forward(self, x):
++        return self.second(self.first(x))
++
++
++def load(repo_or_dir):
++    if not os.path.isdir(repo_or_dir):
++        from huggingface_hub import snapshot_download
++        repo_or_dir = snapshot_download(repo_or_dir)
++    with open(os.path.join(repo_or_dir, "config.json"), encoding="utf-8") as f:
++        cfg = json.load(f)
++    model = timm.create_model(cfg["architecture"], pretrained=False, num_classes=cfg["num_classes"], **cfg["model_kwargs"])
++    for name, r in (cfg.get("ranks") or {}).items():
++        if r > 0:
++            parent, _, child = name.rpartition(".")
++            lin = model.get_submodule(name)
++            setattr(model.get_submodule(parent), child,
++                    FactorizedLinear(lin.in_features, lin.out_features, r, lin.bias is not None))
++    model.load_state_dict(load_file(os.path.join(repo_or_dir, "model.safetensors")))
++    return model.eval(), cfg
++'''
++
++def export_metadata(cfg, ck, dc, variant, seed, threshold):
++    """Fail closed when the effective training configuration cannot be verified."""
++    saved = ck.get("experiment_config")
++    if saved is None:
++        raise ValueError("Checkpoint lacks experiment_config; legacy artifacts cannot be released.")
++    role = "control" if variant == "control" else "baseline"
++    if saved["data"] != cfg["data"] or saved["models"][role] != cfg["models"][role]:
++        raise ValueError("Requested config differs from the checkpoint training configuration.")
++    if ck["model_cfg"] != saved["models"][role] or ck["num_classes"] != saved["data"]["num_classes"]:
++        raise ValueError("Checkpoint architecture/classes disagree with its training configuration.")
++    if ck.get("seed") != seed or (variant == "compressed" and ck.get("threshold") != threshold):
++        raise ValueError("Checkpoint seed/threshold does not match the requested artifact.")
++    if saved["data"]["name"] != "food101":
++        raise ValueError("Synthetic/unsupported datasets are test-only; export and publication refused.")
++    return {"architecture": ck["model_cfg"]["name"],
++            "model_kwargs": ck["model_cfg"].get("kwargs") or {},
++            "num_classes": ck["num_classes"], "ranks": ck.get("ranks"),
++            "energy_threshold": threshold, "seed": seed,
++            "dataset": saved["data"], "pretrained": saved["models"][role].get("pretrained", True),
++            "data_config": {k: list(v) if isinstance(v, tuple) else v for k, v in dc.items()},
++            "experiment_config": saved}
++
++
++def model_card(meta, table, repo, github):
++    # Weight license is deliberately pending until the licensing review.
++    dataset = meta["dataset"]["hf_id"]
++    base = ("base_model: " + json.dumps("timm/" + meta["architecture"]) + "\n") if meta["pretrained"] else ""
++    return ("---\npipeline_tag: image-classification\nlibrary_name: timm\n"
++            + "datasets: [" + json.dumps(dataset) + "]\n" + base
++            + "tags: [vision-transformer, svd, model-compression]\n---\n\n"
++            + "# " + repo.split("/")[-1] + "\n\n"
++            + f"Dataset: `{dataset}`. Classes: {meta['num_classes']}. "
++            + f"Input: `{meta['data_config']['input_size']}`. "
++            + f"Initialized from pretrained weights: {meta['pretrained']}.\n\n"
++            + f"Architecture: `{meta['architecture']}`. SVD threshold: {meta['energy_threshold']}. "
++            + f"Checkpoint seed: {meta['seed']}.\n\n"
++            + "Weight license: PENDING verification; this local package is not release-ready.\n\n"
++            + "## Results\n\n" + table + "\n\n"
++            + "Results aggregate the seeds in the CSVs; the checkpoint uses the seed above.\n\n"
++            + "## Local loading\n\n```python\nfrom vitlr_loader import load\n"
++            + "model, config = load(LOCAL_MODEL_DIRECTORY)\n```\n\n"
++            + f"Source: {github}\n\nAuthor: Luis Felipe Garcia de Souza Paim, UFU.\n")
++
++
++def main():
++    ap = argparse.ArgumentParser()
++    ap.add_argument("--config", required=True)
++    ap.add_argument("--repo-id", required=True)
++    ap.add_argument("--variant", choices=["compressed", "baseline", "control"], default="compressed")
++    ap.add_argument("--seed", type=int, default=42)
++    ap.add_argument("--github", default="PENDING")
++    ap.add_argument("--export-dir", default="hf_export")
++    ap.add_argument("--private", action="store_true")
++    ap.add_argument("--dry-run", action="store_true", help="Read-only plan; creates, deletes and uploads nothing")
++    ap.add_argument("--local-only", action="store_true", help="Build a new local directory without uploading")
++    a = ap.parse_args()
++    cfg = load_config(a.config)
++    out = Path(a.export_dir)
++    # This branch precedes all model loading, dataset access and filesystem writes.
++    if a.dry_run:
++        print(json.dumps({"action": "read-only plan", "destination": str(out), "repo_id": a.repo_id,
++                          "dataset": cfg["data"], "model": cfg["models"]["control" if a.variant == "control" else "baseline"],
++                          "seed": a.seed, "destination_exists": out.exists(),
++                          "eligible_dataset": cfg["data"]["name"] == "food101"}, indent=2))
++        return
++    if cfg["data"]["name"] != "food101":
++        raise ValueError("Synthetic/unsupported datasets are test-only; export and publication refused.")
++    if not a.local_only:
++        raise ValueError("Publication is suspended pending experiments and weight-license verification. Use --local-only.")
++    if out.exists():
++        raise FileExistsError(f"Destination already exists; nothing overwritten: {out}")
++    res = Path(cfg["experiment"]["results_dir"])
++    thr = json.loads((res / "selection.json").read_text(encoding="utf-8"))["threshold"] if a.variant == "compressed" else None
++    method = {"compressed": "svd"}.get(a.variant, a.variant)
++    model, ck = load_checkpoint(ckpt_path(cfg, method, a.seed, thr))
++    meta = export_metadata(cfg, ck, data_config(model), a.variant, a.seed, thr)
++    from datasets import load_dataset_builder
++    labels = load_dataset_builder(meta["dataset"]["hf_id"]).info.features["label"].names
++    if len(labels) != meta["num_classes"]:
++        raise ValueError("Dataset labels do not match the checkpoint classes.")
++    meta["label_names"] = labels
++    table = fmt_table(pd.read_csv(res / "summary_test.csv"))
++    card = model_card(meta, table, a.repo_id, a.github)
++    # Exclusive creation: even an empty existing destination is never overwritten.
++    out.mkdir(parents=True, exist_ok=False)
++    (out / "results").mkdir()
++    save_file({k: v.contiguous() for k, v in model.state_dict().items()}, str(out / "model.safetensors"))
++    (out / "config.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
++    (out / "vitlr_loader.py").write_text(LOADER, encoding="utf-8")
++    (out / "README.md").write_text(card, encoding="utf-8")
++    for f in list(res.glob("*.csv")) + list(res.glob("*.json")) + list((res / "figures").glob("*.png")):
++        shutil.copy(f, out / "results" / f.name)
++    print(f"Local package created at {out.resolve()}; license review and release checks remain pending.")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/src/vitlr/pipeline.py b/src/vitlr/pipeline.py
+new file mode 100644
+index 0000000..96567f2
+--- /dev/null
++++ b/src/vitlr/pipeline.py
+@@ -0,0 +1,151 @@
++"""Cola: avalia + mede + calcula o IC pareado + grava UMA linha por execucao no CSV."""
++from __future__ import annotations
++
++import copy
++import csv
++import json
++import platform
++import subprocess
++import time
++from pathlib import Path
++
++import numpy as np
++import torch
++
++from .benchmark import disk_size_mb, latency_ms, param_count
++from .evaluate import evaluate
++from .flops import count_flops
++from .stats import paired_bootstrap_ci
++from .utils import thr_tag
++
++FIELDS = [
++    "run_id", "timestamp", "split", "seed", "method", "model", "threshold", "finetuned", "precision",
++    "top1", "top5", "loss", "n_eval",
++    "params", "size_mb", "flops_g",
++    "lat_gpu_bs1_ms", "lat_gpu_bs1_std", "gpu_throughput_img_s", "gpu_throughput_bs",
++    "lat_cpu_bs1_ms", "lat_cpu_bs1_std", "cpu_threads",
++    "delta_top1_pp", "ci95_lo", "ci95_hi",
++    "n_factorized", "n_targets", "mean_rank", "ranks_json",
++    "train_epochs", "train_examples", "train_seconds", "device_name", "torch_version",
++    "python_version", "cuda_version", "driver_version",
++]
++
++
++def environment_info() -> dict:
++    """Runtime versions, without inferring historical or unavailable values."""
++    try:
++        result = subprocess.run(
++            ["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"],
++            capture_output=True, text=True, timeout=10, check=True)
++        driver = ";".join(dict.fromkeys(result.stdout.strip().splitlines())) or "unknown"
++    except (OSError, subprocess.SubprocessError):
++        driver = "unknown"
++    return {"python_version": platform.python_version(), "torch_version": str(torch.__version__),
++            "cuda_version": torch.version.cuda or "none (CPU build)", "driver_version": driver}
++
++
++def run_id(method, seed, split, precision="fp32", threshold=None, finetuned=None) -> str:
++    mid = f"-thr{thr_tag(threshold)}-ft{int(finetuned)}" if method == "svd" else ""
++    return f"{method}-s{seed}{mid}-{precision}-{split}"
++
++
++def ckpt_path(cfg, method, seed, threshold=None) -> Path:
++    out = Path(cfg["experiment"]["out_dir"])
++    if method == "svd":
++        return out / "svd" / f"seed{seed}" / f"thr{thr_tag(threshold)}_ft.pt"
++    return out / method / f"seed{seed}.pt"
++
++
++def csv_path(cfg) -> Path:
++    return Path(cfg["experiment"]["results_dir"]) / "runs.csv"
++
++
++def done_ids(cfg) -> set:
++    p = csv_path(cfg)
++    if not p.exists():
++        return set()
++    with p.open(newline="", encoding="utf-8") as f:
++        return {r["run_id"] for r in csv.DictReader(f)}
++
++
++def _append(cfg, row: dict) -> None:
++    p = csv_path(cfg)
++    p.parent.mkdir(parents=True, exist_ok=True)
++    new = not p.exists()
++    if not new:
++        with p.open(newline="", encoding="utf-8") as f:
++            if next(csv.reader(f), None) != FIELDS:
++                raise ValueError(f"CSV schema differs: {p}. Use a new results directory; preserve legacy CSVs.")
++    with p.open("a", newline="", encoding="utf-8") as f:
++        w = csv.DictWriter(f, fieldnames=FIELDS)
++        if new:
++            w.writeheader()
++        w.writerow({k: row.get(k, "") for k in FIELDS})
++
++
++def preds_path(cfg, rid: str) -> Path:
++    return Path(cfg["experiment"]["results_dir"]) / "preds" / f"{rid}.npy"
++
++
++def profile_model(model, cfg, device, input_size, precision="fp32", ref: dict | None = None) -> dict:
++    """Parametros, tamanho, FLOPs e latencia. Para fp16/int8, parametros e FLOPs
++    vem de `ref` (o modelo fp32 de origem): quantizar nao muda a contagem de operacoes."""
++    b = cfg["bench"]
++    out = {"size_mb": disk_size_mb(model), "cpu_threads": b["cpu"].get("threads") or torch.get_num_threads()}
++    if precision == "fp32":
++        out["params"] = param_count(model)
++        out["flops_g"] = count_flops(model, input_size)["total"] / 1e9
++    else:
++        out["params"], out["flops_g"] = ref["params"], ref["flops_g"]
++
++    if precision in ("fp32", "fp16") and device.type == "cuda":
++        dt = torch.float16 if precision == "fp16" else torch.float32
++        bss = sorted(b["gpu"]["batch_sizes"])
++        r1 = latency_ms(model, device, input_size, 1, b["gpu"]["warmup"], b["gpu"]["reps"], dt)
++        rn = latency_ms(model, device, input_size, bss[-1], b["gpu"]["warmup"], b["gpu"]["reps"], dt)
++        out.update(lat_gpu_bs1_ms=r1["mean"], lat_gpu_bs1_std=r1["std"],
++                   gpu_throughput_img_s=rn["img_per_s"], gpu_throughput_bs=bss[-1])
++    if precision in ("fp32", "int8"):
++        cpu_model = model if precision == "int8" else copy.deepcopy(model).cpu()
++        r = latency_ms(cpu_model, torch.device("cpu"), input_size, b["cpu"]["batch_size"],
++                       b["cpu"]["warmup"], b["cpu"]["reps"], threads=b["cpu"].get("threads"))
++        out.update(lat_cpu_bs1_ms=r["mean"], lat_cpu_bs1_std=r["std"])
++    return out
++
++
++def eval_and_log(cfg, bundle, model, *, split, seed, method, model_name, device, input_size,
++                 precision="fp32", threshold=None, finetuned=None, comp_info=None, ref=None, train_info=None) -> dict:
++    """Avalia `model` em `split`, mede custo e anexa uma linha a results/runs.csv."""
++    rid = run_id(method, seed, split, precision, threshold, finetuned)
++    if precision == "int8":
++        dev, dt, bs = torch.device("cpu"), torch.float32, cfg["eval"]["cpu_batch_size"]
++    else:
++        dev, dt, bs = device, (torch.float16 if precision == "fp16" else torch.float32), cfg["eval"]["batch_size"]
++    ev = evaluate(model, bundle.loader(split, bs), dev, dt, desc=rid)
++    prof = profile_model(model, cfg, device, input_size, precision, ref)
++
++    pp = preds_path(cfg, rid)
++    pp.parent.mkdir(parents=True, exist_ok=True)
++    np.save(pp, ev["correct1"])
++
++    row = {"run_id": rid, "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"), "split": split, "seed": seed,
++           "method": method, "model": model_name, "precision": precision,
++           "threshold": "" if threshold is None else threshold, "finetuned": "" if finetuned is None else int(finetuned),
++           "top1": ev["top1"], "top5": ev["top5"], "loss": ev["loss"], "n_eval": ev["n"], **prof,
++           "device_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu",
++           **(train_info or {}), **environment_info()}
++
++    base = preds_path(cfg, run_id("baseline", seed, split))
++    if rid != base.stem and base.exists():
++        ci = paired_bootstrap_ci(ev["correct1"], np.load(base), cfg["bootstrap"]["n_boot"], cfg["bootstrap"]["seed"])
++        row.update(delta_top1_pp=ci["delta"], ci95_lo=ci["lo"], ci95_hi=ci["hi"])
++    if comp_info is not None:
++        ranks = {k: v["rank"] for k, v in comp_info.items()}
++        used = [r for r in ranks.values() if r > 0]
++        row.update(n_factorized=len(used), n_targets=len(ranks),
++                   mean_rank=float(np.mean(used)) if used else 0.0, ranks_json=json.dumps(ranks))
++    _append(cfg, row)
++    extra = f" | delta {row['delta_top1_pp']:+.2f} pp [{row['ci95_lo']:+.2f}, {row['ci95_hi']:+.2f}]" if "ci95_lo" in row else ""
++    print(f"[{rid}] top1 {row['top1']:.2f} top5 {row['top5']:.2f} | params {row['params'] / 1e6:.2f}M "
++          f"| {row['flops_g']:.3f} GFLOPs | {row['size_mb']:.1f} MB{extra}", flush=True)
++    return row
+diff --git a/tests/test_release.py b/tests/test_release.py
+new file mode 100644
+index 0000000..ce8e881
+--- /dev/null
++++ b/tests/test_release.py
+@@ -0,0 +1,89 @@
++import copy
++import importlib.util
++import json
++from pathlib import Path
++import subprocess
++import sys
++
++import pytest
++
++from vitlr.pipeline import FIELDS, _append, environment_info
++from vitlr.utils import load_config
++
++
++SCRIPT = Path(__file__).resolve().parents[1] / "scripts/06_publish_hf.py"
++spec = importlib.util.spec_from_file_location("exporter", SCRIPT)
++exporter = importlib.util.module_from_spec(spec)
++spec.loader.exec_module(exporter)
++
++
++@pytest.mark.parametrize("existing", [False, True])
++def test_dry_run_leaves_destination_untouched(tmp_path, existing):
++    out = tmp_path / "export"
++    if existing:
++        out.mkdir()
++        (out / "keep.txt").write_text("keep")
++    before = {p.relative_to(tmp_path): p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
++    result = subprocess.run([sys.executable, "-B", str(SCRIPT), "--config", "configs/smoke.yaml",
++                             "--repo-id", "test/test", "--export-dir", str(out), "--dry-run"],
++                            capture_output=True, text=True, check=True)
++    assert json.loads(result.stdout)["eligible_dataset"] is False
++    assert out.exists() == existing
++    assert before == {p.relative_to(tmp_path): p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
++
++
++def test_synthetic_export_is_refused_without_touching_files(tmp_path):
++    out = tmp_path / "export"
++    out.mkdir()
++    sentinel = out / "keep.txt"
++    sentinel.write_text("keep")
++    result = subprocess.run([sys.executable, "-B", str(SCRIPT), "--config", "configs/smoke.yaml",
++                             "--repo-id", "test/test", "--export-dir", str(out), "--local-only"],
++                            capture_output=True, text=True)
++    assert result.returncode != 0
++    assert "test-only" in result.stderr
++    assert sentinel.read_text() == "keep"
++    assert list(out.iterdir()) == [sentinel]
++
++
++def test_existing_destination_refused_before_checkpoint_loading(tmp_path, monkeypatch):
++    monkeypatch.setattr(sys, "argv", [str(SCRIPT), "--config", "configs/full.yaml", "--repo-id",
++                                     "test/test", "--export-dir", str(tmp_path), "--local-only"])
++    sentinel = tmp_path / "keep.txt"
++    sentinel.write_text("keep")
++    with pytest.raises(FileExistsError):
++        exporter.main()
++    assert sentinel.read_text() == "keep"
++
++
++def test_card_metadata_uses_training_config_and_rejects_mismatch():
++    cfg = load_config("configs/full.yaml")
++    ck = {"experiment_config": copy.deepcopy(cfg), "model_cfg": cfg["models"]["baseline"],
++          "num_classes": 101, "seed": 42}
++    meta = exporter.export_metadata(cfg, ck, {"input_size": (3, 224, 224)}, "baseline", 42, None)
++    card = exporter.model_card(meta, "CSV TABLE", "test/model", "PENDING")
++    assert 'ethz/food101' in card and 'Classes: 101' in card and '[3, 224, 224]' in card
++    assert 'base_model: "timm/deit_small_patch16_224.fb_in1k"' in card
++    ck["experiment_config"]["data"]["name"] = "fake"
++    with pytest.raises(ValueError, match="differs"):
++        exporter.export_metadata(cfg, ck, {}, "baseline", 42, None)
++    with pytest.raises(ValueError, match="lacks"):
++        exporter.export_metadata(cfg, {}, {}, "baseline", 42, None)
++
++
++def test_csv_environment_and_legacy_schema_protection(tmp_path):
++    cfg = {"experiment": {"results_dir": str(tmp_path)}}
++    info = environment_info()
++    assert all(info[k] for k in ("python_version", "torch_version", "cuda_version", "driver_version"))
++    _append(cfg, {"run_id": "test", **info})
++    import csv
++    with (tmp_path / "runs.csv").open(newline="") as f:
++        reader = csv.DictReader(f)
++        assert reader.fieldnames == FIELDS
++        row = next(reader)
++        assert all(row[k] == v for k, v in info.items())
++    (tmp_path / "runs.csv").write_text("run_id,torch_version\nlegacy,unknown\n")
++    before = (tmp_path / "runs.csv").read_bytes()
++    with pytest.raises(ValueError, match="schema"):
++        _append(cfg, {"run_id": "new"})
++    assert (tmp_path / "runs.csv").read_bytes() == before
+diff --git a/audit/RELEASE_PREPARATION.md b/audit/RELEASE_PREPARATION.md
+new file mode 100644
+index 0000000..1dacb88
+--- /dev/null
++++ b/audit/RELEASE_PREPARATION.md
+@@ -0,0 +1,77 @@
++# Release preparation — 2026-11-17
++
++Release is suspended until Food-101 experiments and weight-license review finish.
++No remote repository, upload or commit is authorized in this preparation step.
++
++## Decisions
++
++- Code license selected by the author: Apache-2.0. License file and external-license
++  review remain part of the licensing stage; no weight license is assumed.
++- Author: Luis Felipe Garcia de Souza Paim, UFU.
++- Release checkpoint seed: 42, chosen before viewing Food-101 results.
++- Full experiment seeds: [42, 0, 1], retaining three seeds in total.
++- Release checkpoints: baseline and SVD after fine-tuning, threshold chosen on validation.
++- Repository names retain user/HF namespace placeholders until supplied.
++
++## Implemented before feasibility experiments
++
++- Export dry-run only reads configuration and prints a plan. It does not load
++  checkpoints, fetch data, create directories, overwrite files, or upload.
++- Local export requires `--local-only` and an absent destination. Existing
++  destinations are refused, including empty directories. No recursive deletion.
++- Remote publication is disabled while release and licensing are pending.
++- Synthetic and unsupported datasets cannot be exported or published.
++- New checkpoints preserve the effective merged experiment config. Export checks
++  it against the requested dataset/model, checkpoint classes, seed and threshold.
++  Legacy checkpoints without provenance are refused.
++- Cards derive dataset, class count, input resolution, architecture and pretrained
++  initialization from verified metadata. Weight licensing is explicitly pending.
++  Complete release cards and tested inference examples remain a later stage.
++- CSV rows now include Python, PyTorch, CUDA build version and NVIDIA driver.
++  Unavailable driver values are `unknown`; CPU builds are explicit. Existing
++  CSVs are preserved; appending a different schema is refused.
++- Ignore rules cover environments, datasets, caches, checkpoints, generated
++  runs/results/exports, notebook checkpoints, credentials and OS files.
++
++## Environment and validation
++
++Validated existing CPU environment: Python 3.12.7, PyTorch 2.15.0+cpu,
++torchvision 0.29.2+cpu, no CUDA runtime in this PyTorch build.
++NVIDIA driver observed: 591.59; GPU: RTX 3050 6GB Laptop GPU.
++`requirements.txt` pins this CPU environment, including transitive packages.
++A GPU environment must be selected, pinned and validated before feasibility.
++This is not a clean-install validation; that remains in the reproducibility stage.
++
++Validation command: `audit/.venv/Scripts/python.exe -m pytest -q`.
++Result: 27 passed in 30.03 seconds (21 existing + 6 release regression cases).
++`python -m pip check`: No broken requirements found.
++Regression coverage: read-only dry-run with absent/present destinations,
++synthetic refusal, existing destination preservation, config provenance, card
++metadata, CSV environment persistence and legacy schema protection.
++
++## Scan and preserved artifacts
++
++Before Git initialization, a pattern scan of 52 project text files found no
++secret candidates, emails or machine-specific absolute paths. It covered source,
++configs, docs, CSVs, JSON and the existing export loader/card. It excluded the
++dependency virtual environment, bytecode/cache directories and binary payloads.
++Patterns covered common HF/GitHub/AWS/OpenAI token forms, private-key headers,
++literal credential assignments, emails and user/home absolute paths. This is
++pattern-based screening, not a guarantee that no credential can exist.
++
++Machine-specific paths exist in ignored virtual-environment metadata, including
++`audit/.venv/pyvenv.cfg` and its editable-install `.pth` file. These are not
++release source files. No original Git history exists to inspect.
++
++No files were deleted or moved. `audit/export/` is an ignored, preserved,
++**invalid legacy synthetic export**: its Food-101 claims and license metadata
++must not be used. Smoke results/checkpoints are preserved and ignored.
++No non-environment file above 10 MiB was identified in the initial size check.
++
++## Next gate
++
++Review this change before any experiment. Then validate a CUDA environment,
++run one baseline epoch on full Food-101 training data, measure throughput,
++peak VRAM and epoch time, estimate the complete three-seed matrix and request
++approval before proceeding with that matrix. Do not touch official test data
++for feasibility or use feasibility results to select the publication seed.

@@ -1,0 +1,7 @@
+{
+  "scope": "Git candidates (untracked, not ignored); environments, caches, data and raw logs excluded",
+  "text_files_scanned": 54,
+  "findings": [],
+  "files_above_10_mib": [],
+  "git_history": "new repository; no commits"
+}

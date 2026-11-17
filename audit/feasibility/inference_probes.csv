@@ -1,0 +1,2 @@
+purpose,python_version,torch_version,cuda_version,driver_version,gpu_fp32_bs1_ms,gpu_fp32_bs32_ms,cpu_svd_seconds,cpu_int8_bs1_ms,cpu_int8_bs32_ms
+feasibility_only,3.12.7,2.5.1+cu121,12.1,591.59,7.6303400011966005,230.06940999766812,3.09021040002699,56.71406666321369,1259.8948000037733

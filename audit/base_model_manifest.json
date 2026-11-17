@@ -1,0 +1,7 @@
+{
+  "repo_id": "timm/deit_small_patch16_224.fb_in1k",
+  "revision": "91327a9c99f98fe6b524cd4d397b7226b80e1365",
+  "path": "model.safetensors",
+  "bytes": 88216496,
+  "sha256": "1e747b4a8d0df2cfbd3c450e8c97685d867448ab0c2ddbfb34b6885f5cb23e5b"
+}

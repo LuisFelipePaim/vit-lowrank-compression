@@ -1,0 +1,7 @@
+# Full official training pool; fixed validation split. Never evaluates official test.
+_base_: full.yaml
+experiment: {out_dir: runs_feasibility, results_dir: results_feasibility, seeds: [42]}
+data:
+  cache_dir: data/hf_datasets
+  archive_md5: 85eeb15f3717b99a5da872d97d918f87
+train: {epochs: 1}

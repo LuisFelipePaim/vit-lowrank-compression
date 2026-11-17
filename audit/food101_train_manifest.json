@@ -1,0 +1,46 @@
+{
+  "dataset": "ethz/food101",
+  "revision": "83488de741c1bd1ce27aa6a2b33e19c7bdf92ca9",
+  "files": [
+    {
+      "path": "data/train-00000-of-00008.parquet",
+      "bytes": 489582959,
+      "sha256": "015e9a99c7d302efbd261b8015a27f61083d8efa6dcb495bffd296778ffd9d36"
+    },
+    {
+      "path": "data/train-00001-of-00008.parquet",
+      "bytes": 464225341,
+      "sha256": "22519893e937136db7a791e2815a63a4dbbdd8ba75bb4b8b37df83871ca3d2b1"
+    },
+    {
+      "path": "data/train-00002-of-00008.parquet",
+      "bytes": 472211726,
+      "sha256": "119cdf8ad024e8563f2bf60393b167aa9a18d1bbf4f9dc7227473a94db168d7a"
+    },
+    {
+      "path": "data/train-00003-of-00008.parquet",
+      "bytes": 463644865,
+      "sha256": "8fa54bb56be8b9b75aec29046d952947587f266b5ec54633a6e44c35c34fde22"
+    },
+    {
+      "path": "data/train-00004-of-00008.parquet",
+      "bytes": 475091267,
+      "sha256": "8f127dcc262bce811e8b690b5834fc7cb13f82461a1fe1650711623e86aa4a19"
+    },
+    {
+      "path": "data/train-00005-of-00008.parquet",
+      "bytes": 469875468,
+      "sha256": "6c02192cb6183ae554a97ecf7b3e7e25240c3a32e99a630343c430eabd859fcc"
+    },
+    {
+      "path": "data/train-00006-of-00008.parquet",
+      "bytes": 478240948,
+      "sha256": "e45129fa1cb069859df21467b68bab7e57fcb0d93c9cf36c7e4bc56d3cdddc0b"
+    },
+    {
+      "path": "data/train-00007-of-00008.parquet",
+      "bytes": 485648421,
+      "sha256": "44affd2f82062a2824093fb5675f0d753ebc5c72a983b6b4876837f3799441e5"
+    }
+  ]
+}
